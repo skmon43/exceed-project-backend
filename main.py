@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.encoders import jsonable_encoder
 
 from datetime import datetime, date, time, timedelta
-from time import sleep
+
 
 app = FastAPI()
 origins = [
@@ -133,16 +133,20 @@ class Event(BaseModel):
     people_to_close : int
     people_to_reopen : int
     schedule: Optional[list] = None
-    sch_people: Optional[list] = None
+    # sch_people: Optional[list] = None
 
 
 
 @app.get("/")
-def get_root():
-    return {"detail": "this is root directory (/)"}
+async def get_root():
+    return {"detail": "this is root ('/')"}
 
-@app.post("/admin_event")
-def add_event(event: Event, current_user: User = Depends(get_current_user)):
+@app.post("/event_add")
+async def add_event(event: Event, current_user: User = Depends(get_current_user)):
+    for x in db['events'].find():
+        if event.title == x["title"]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - title is duplicate from tilte in DB")
+
     st = event.start.split(":")
     start_time = time(int(st[0]), int(st[1]), int(st[2]))
 
@@ -171,25 +175,38 @@ def add_event(event: Event, current_user: User = Depends(get_current_user)):
     end_t = datetime(2000, 1, 1, int(et[0]), int(et[1]), int(et[2]))
 
     schedule_list = []
-    sch_people_dict = {}
     schedule_list.append(f'{left_t.time()}-{right_t.time()}')
-    sch_people_dict[f'{left_t.time()}-{right_t.time()}'] = None
-    while (left_t + timedelta(minutes = (event.duration_time + event.break_time)) < end_t):
+
+    while (right_t + timedelta(minutes = (event.duration_time + event.break_time)) < end_t):
         left_t = left_t + timedelta(minutes = (event.duration_time + event.break_time))
         right_t = left_t + timedelta(minutes = event.duration_time)
         schedule_list.append(f'{left_t.time()}-{right_t.time()}')
-        sch_people_dict[f'{left_t.time()}-{right_t.time()}'] = None
 
     event.schedule = schedule_list
-    event.sch_people = sch_people_dict
+    print(event.schedule)
 
     db["events"].insert_one(jsonable_encoder(event))
     return {"detail": "successfully add event"}
 
 
 
-@app.get("/front_event")
-def now_event_info():
+@app.get("/event")
+async def all_event_info():
+    event_list = []
+    find = db["events"].find({}, {"_id":0})
+    for x in find:
+        event_list.append(x)
+    return event_list
+
+
+
+@app.get("/event/{title}")
+async def event_info(title: str):
+    return db["events"].find_one({"title": title}, {"_id":0})
+
+
+@app.get("/event_now")
+async def now_event_info():
     date_today = f'{date.today()}'
     dt = date_today.split("-")
     date_today = f'{dt[2]}:{dt[1]}:{dt[0]}'
@@ -230,9 +247,7 @@ def now_event_info():
                 "next": next_round_time.time()
             }
     
-    return {
-        "detail": "no event now"
-    }
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no event now")
 
 
 
@@ -241,8 +256,13 @@ class People(BaseModel):
     people_out: int
     chair_status: str
 
+the_people = {
+        "current_people": 0,
+        "chair_status": 0
+    }
+
 @app.post("/hardware_in_out")
-def in_out_people(people: People):
+async def in_out_people(people: People):
     chair = people.chair_status.split(" ")
     print(chair)
     global the_people
@@ -255,7 +275,7 @@ def in_out_people(people: People):
 
 
 @app.get("/front_people")
-def now_people_info():
+async def now_people_info():
     try:
         the_people
     except NameError:
@@ -266,7 +286,7 @@ def now_people_info():
 
 
 @app.get("/hardware") 
-def current():
+async def current():
     try:
         the_people
     except NameError:
@@ -279,16 +299,18 @@ def current():
 
 
 @app.get("/statistic")
-def people_coun():
+async def statistic():
     pass
 
 
 
 class History(BaseModel):
+    event_id: str
     date: str
     start_end: str
     people_count: int
 
+@app.get("/hit_me")
 async def count_when_the_end():
     date_today = f'{date.today()}'
     dt = date_today.split("-")
@@ -298,23 +320,15 @@ async def count_when_the_end():
     for x in find:
         # print(x)
         for y in x["schedule"]:
-            time_len = y.split("-")
-            this_end_time = time_len[1]
+            this_end_time = y.split("-")[1]
             now_time = datetime.now().strftime("%H:%M:%S")
             print(f'now_time={now_time}, this_end_time={this_end_time}')
             if f'{now_time}' == f'{this_end_time}':
                 new = {
+                    "event_id": x["_id"],
                     "date": date_today,
                     "start_end": y,
                     "people_count": the_people["current_people"]
                 }
                 db["historys"].insert_one(new)
-                return {"detail": "successfully add history"}
-
-# @app.get("/do")
-# async def keep_count(background_task: BackgroundTasks):
-#     background_task.add_task(count_when_the_end)
-#     return {"detail": "working in background"}
-
-# while True:
-#     count_when_the_end()              
+                return {"detail": "successfully add history"}          
