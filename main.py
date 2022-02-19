@@ -133,13 +133,15 @@ class Event(BaseModel):
 
 
 
-
 @app.get("/")
 async def get_root():
     return {"detail": "this is root ('/')"}
 
 @app.post("/event_add")
 async def add_event(event: Event, current_user: User = Depends(get_current_user)):
+    event.start = f'{event.start}:00'
+    event.end = f'{event.end}:00'
+    
     for x in db['events'].find():
         if event.title == x["title"]:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - title is duplicate from tilte in DB")
@@ -172,6 +174,37 @@ async def add_event(event: Event, current_user: User = Depends(get_current_user)
 
 
 
+@app.put("/event_update/{title}")
+async def event_edit(title : str, event : Event, current_user: User = Depends(get_current_user)):
+    query = {"title" : title}
+    find = db["events"].find_one(query)
+    
+    if (find != None):
+        new = {"$set": {"title" : event.title , "date" : event.date , "start" : event.start , "end" : event.end , "people_to_close" : event.people_to_close , "people_to_reopen" : event.people_to_reopen}}
+        db["events"].update_one(query,new)
+        return {
+            "detail" : "successfully update event"
+        }
+    else:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"title is not exist in DB")
+
+
+
+@app.delete("/event_del/{title}")
+async def event_delete(title : str, current_user: User = Depends(get_current_user)):
+    query = {"title" : title}
+    find = db["events"].find_one(query)
+
+    if (find != None):
+        db["events"].delete_one(query)
+        return {
+            "detail" : "successfully delete event"
+        }
+    else:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"title is not exist in DB")
+
+
+
 @app.get("/event")
 async def all_event_info():
     event_list = []
@@ -190,8 +223,6 @@ async def event_info(title: str):
 @app.get("/event_now")
 async def now_event_info():
     date_today = f'{date.today()}'
-    dt = date_today.split("-")
-    date_today = f'{dt[2]}:{dt[1]}:{dt[0]}'
 
     now_time = datetime.now().strftime("%H:%M:%S")
     nt = now_time.split(":")
@@ -215,6 +246,39 @@ async def now_event_info():
     
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no event now")
 
+
+
+@app.get("/event_next")
+async def next_event_info():
+    date_date = date.today()
+    
+    now_time = datetime.now().strftime("%H:%M:%S")
+    nt = now_time.split(":")
+    now_time = time(int(nt[0]), int(nt[1]), int(nt[2]))
+
+    for i in range (365):
+        date_date_str = f'{date_date}'
+
+        date_today_str = f'{date.today()}'
+
+        query = {"date": date_date_str}
+        find = db["events"].find(query).sort("start")
+
+        for x in find:
+            now_time = datetime.now().strftime("%H:%M:%S")
+            nt = now_time.split(":")
+            now_time = time(int(nt[0]), int(nt[1]), int(nt[2]))
+
+            x_start = x["start"]
+            xs = x_start.split(":")
+            x_start = time(int(xs[0]), int(xs[1]), int(xs[2]))
+
+            if ((date_date_str == date_today_str) and (x_start > now_time)) or (date_date_str != date_today_str):              
+                return db["events"].find_one({"title": x["title"]}, {"_id": 0})
+
+        date_date = date_date + timedelta(days = 1)
+
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no events comming in 1-year")
 
 
 class People(BaseModel):
@@ -272,8 +336,6 @@ async def door_status():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no people info")
 
     date_today = f'{date.today()}'
-    dt = date_today.split("-")
-    date_today = f'{dt[2]}:{dt[1]}:{dt[0]}'
     now_time = datetime.now().strftime("%H:%M:%S")
     nt = now_time.split(":")
     now_time = time(int(nt[0]), int(nt[1]), int(nt[2]))
@@ -316,12 +378,9 @@ class History(BaseModel):
 @app.get("/hit_me")
 async def count_when_the_end():
     date_today = f'{date.today()}'
-    dt = date_today.split("-")
-    date_today = f'{dt[2]}:{dt[1]}:{dt[0]}'
 
     find = db["events"].find({"date": date_today})
     for x in find:
-        # print(x)
         now_time = datetime.now().strftime("%H:%M:%S")
         print(f'now_time={now_time}, this_end_time={x["end"]}')
         if f'{now_time}' == f'{x["end"]}':
