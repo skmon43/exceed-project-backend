@@ -141,7 +141,7 @@ async def get_root():
 async def add_event(event: Event, current_user: User = Depends(get_current_user)):
     event.start = f'{event.start}:00'
     event.end = f'{event.end}:00'
-    
+
     for x in db['events'].find():
         if event.title == x["title"]:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - title is duplicate from tilte in DB")
@@ -278,7 +278,8 @@ async def next_event_info():
 
         date_date = date_date + timedelta(days = 1)
 
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no events comming in 1-year")
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no events comming soon")
+
 
 
 class People(BaseModel):
@@ -286,10 +287,7 @@ class People(BaseModel):
     people_out: int
     chair_status: str
 
-the_people = {
-        "current_people": 0,
-        "chair_status": 0
-    }
+the_people = {}
 
 @app.post("/hardware_in_out")
 async def in_out_people(people: People):
@@ -392,4 +390,5 @@ async def count_when_the_end():
                 "people_count": the_people["current_people"]
             }
             db["historys"].insert_one(new)
+            db["events"].delete_one({"title" : x["title"]})
             return {"detail": "successfully add history"}
