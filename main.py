@@ -128,12 +128,9 @@ class Event(BaseModel):
     date: str
     start: str
     end: str
-    duration_time: int  #minutes
-    break_time : int    #minutes
     people_to_close : int
     people_to_reopen : int
-    schedule: Optional[list] = None
-    # sch_people: Optional[list] = None
+
 
 
 
@@ -169,21 +166,6 @@ async def add_event(event: Event, current_user: User = Depends(get_current_user)
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - time is overlap from time in DB")  
         if (start_time < x_start_time) and (end_time > x_end_time):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - time is overlap from time in DB")  
-
-    left_t = datetime(2000, 1, 1, int(st[0]), int(st[1]), int(st[2]))
-    right_t = left_t + timedelta(minutes = event.duration_time)
-    end_t = datetime(2000, 1, 1, int(et[0]), int(et[1]), int(et[2]))
-
-    schedule_list = []
-    schedule_list.append(f'{left_t.time()}-{right_t.time()}')
-
-    while (right_t + timedelta(minutes = (event.duration_time + event.break_time)) < end_t):
-        left_t = left_t + timedelta(minutes = (event.duration_time + event.break_time))
-        right_t = left_t + timedelta(minutes = event.duration_time)
-        schedule_list.append(f'{left_t.time()}-{right_t.time()}')
-
-    event.schedule = schedule_list
-    print(event.schedule)
 
     db["events"].insert_one(jsonable_encoder(event))
     return {"detail": "successfully add event"}
@@ -228,24 +210,8 @@ async def now_event_info():
         x_end_time = time(int(x_et[0]), int(x_et[1]), int(x_et[2]))
 
         if (x_start_time < now_time < x_end_time):
-            next_round_time = datetime(2000, 1, 1, int(x_et[0]), int(x_et[1]), int(x_et[2]))
-            while (next_round_time < datetime.now()):
-                next_round_time = next_round_time + timedelta(minutes = (x["duration_time"] + x["break_time"]))
-
-            current_round_time = next_round_time - timedelta(minutes = (x["duration_time"] + x["break_time"]))
-            end_current_round_time = current_round_time + timedelta(minutes = x["duration_time"])
-
-            if current_round_time.time() < now_time < end_current_round_time.time():
-                now = f'{current_round_time.time()}-{end_current_round_time.time()}'
-            else:
-                now = None
-
-            return {
-                "title": x["title"],
-                "date": date_today,
-                "now": now,
-                "next": next_round_time.time()
-            }
+            now_event = db["events"].find_one({"_id": x["_id"]}, {"_id": 0})
+            return now_event
     
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no event now")
 
@@ -285,16 +251,16 @@ async def now_people_info():
 
 
 
-# @app.get("/hardware") 
-# async def current():
-#     try:
-#         the_people
-#     except NameError:
-#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no people info")
-#     else:
-#         return {
-#             "current_people": the_people["current_people"]
-#         }
+@app.get("/hardware") 
+async def current():
+    try:
+        the_people
+    except NameError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no people info")
+    else:
+        return {
+            "current_people": the_people["current_people"]
+        }
 
 
 
@@ -356,16 +322,15 @@ async def count_when_the_end():
     find = db["events"].find({"date": date_today})
     for x in find:
         # print(x)
-        for y in x["schedule"]:
-            this_end_time = y.split("-")[1]
-            now_time = datetime.now().strftime("%H:%M:%S")
-            print(f'now_time={now_time}, this_end_time={this_end_time}')
-            if f'{now_time}' == f'{this_end_time}':
-                new = {
-                    "event_id": x["_id"],
-                    "date": date_today,
-                    "start_end": y,
-                    "people_count": the_people["current_people"]
-                }
-                db["historys"].insert_one(new)
-                return {"detail": "successfully add history"}          
+        now_time = datetime.now().strftime("%H:%M:%S")
+        print(f'now_time={now_time}, this_end_time={x["end"]}')
+        if f'{now_time}' == f'{x["end"]}':
+            new = {
+                "event_id": x["_id"],
+                "date": date_today,
+                "start": x["start"],
+                "end": x["end"],
+                "people_count": the_people["current_people"]
+            }
+            db["historys"].insert_one(new)
+            return {"detail": "successfully add history"}
