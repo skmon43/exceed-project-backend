@@ -285,16 +285,53 @@ async def now_people_info():
 
 
 
-@app.get("/hardware") 
-async def current():
+# @app.get("/hardware") 
+# async def current():
+#     try:
+#         the_people
+#     except NameError:
+#         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no people info")
+#     else:
+#         return {
+#             "current_people": the_people["current_people"]
+#         }
+
+
+
+@app.get("/people_in_time")
+async def door_status():
     try:
-        the_people
+        current = the_people["current_people"]
     except NameError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no people info")
+
+    date_today = f'{date.today()}'
+    dt = date_today.split("-")
+    date_today = f'{dt[2]}:{dt[1]}:{dt[0]}'
+    now_time = datetime.now().strftime("%H:%M:%S")
+    nt = now_time.split(":")
+    now_time = time(int(nt[0]), int(nt[1]), int(nt[2]))
+    find = db["events"].find({"date": date_today})
+    print(date_today)
+    if (find != None):
+        for x in find:
+            x_st = x["start"].split(":")
+            x_start_time = time(int(x_st[0]), int(x_st[1]), int(x_st[2]))
+
+            x_et = x["end"].split(":")
+            x_end_time = time(int(x_et[0]), int(x_et[1]), int(x_et[2]))
+
+            if (x_start_time < now_time < x_end_time):
+                if (current < x["people_to_close"]):
+                    return {
+                        "status": 1 #คนยังไม่ถึง max
+                    }
+                else:
+                    return {
+                        "status": 0
+                    }
     else:
-        return {
-            "current_people": the_people["current_people"]
-        }
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no event info") 
 
 
 
