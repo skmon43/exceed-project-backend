@@ -1,3 +1,4 @@
+from tracemalloc import start
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Request, status, BackgroundTasks
 from fastapi.responses import JSONResponse
@@ -151,6 +152,9 @@ async def add_event(event: Event, current_user: User = Depends(get_current_user)
 
     et = event.end.split(":")
     end_time = time(int(et[0]), int(et[1]), int(et[2]))
+
+    if (start_time > end_time):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail = f"didn't add event - end_time must be greater than start_time")
     
     query = {"date": event.date}
     find = db["events"].find(query)
@@ -246,6 +250,16 @@ async def now_event_info():
     
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail = f"no event now")
 
+    # --- SUITABLE FOR FRONTEND TEAM ---
+    # return {
+    #     "title": "No Event Now",
+    #     "date": "",
+    #     "start": "",
+    #     "end": "",
+    #     "people_to_close": 0,
+    #     "people_to_reopen": 0
+    # }
+
 
 
 @app.get("/event_next")
@@ -287,7 +301,11 @@ class People(BaseModel):
     people_out: int
     chair_status: str
 
-the_people = {}
+the_people = {
+    "people_in": 0,
+    "people_out": 0,
+    "chair_status": "1 1 1 1"
+}
 
 @app.post("/hardware_in_out")
 async def in_out_people(people: People):
@@ -361,9 +379,14 @@ async def door_status():
 
 
 
-@app.get("/statistic")
+@app.get("/history")
 async def statistic():
-    pass
+    history_list = []
+    find = db["events"].find({}, {"_id":0})
+    for x in find:
+        history_list.append(x)
+    return history_list
+
 
 
 
@@ -383,7 +406,7 @@ async def count_when_the_end():
         print(f'now_time={now_time}, this_end_time={x["end"]}')
         if f'{now_time}' == f'{x["end"]}':
             new = {
-                "event_id": x["_id"],
+                "title": x["title"],
                 "date": date_today,
                 "start": x["start"],
                 "end": x["end"],
